@@ -1150,6 +1150,27 @@ const Bit32u PAGING_PDE4M_RESERVED_BITS = ((1 << (41-BX_PHY_ADDRESS_WIDTH))-1) <
 // Translate a linear address to a physical address in legacy paging mode
 bx_phy_address BX_CPU_C::translate_linear_legacy(bx_address laddr, Bit32u &lpf_mask, unsigned user, unsigned rw)
 {
+  // Consult the architectural 386 cache on a host TLB miss. This also makes
+  // entries written by TR6/TR7 available to ordinary paged memory accesses.
+  if (BX_CPU_THIS_PTR tr386_enabled) {
+    unsigned index = (laddr >> 12) & 7;
+    for (unsigned way=0; way<4; ++way) {
+      unsigned slot = way * 8 + index;
+      Bit32u tag = BX_CPU_THIS_PTR tr386_tag[slot];
+      if ((tag & 0xfffff800) != ((Bit32u(laddr) & 0xfffff000) | 0x800)) continue;
+      Bit32u access = ((tag & 0x100) ? BX_COMBINED_ACCESS_USER : 0) |
+                      ((tag & 0x040) ? BX_COMBINED_ACCESS_WRITE : 0);
+      check_leaf_entry_faults(laddr, access, access, user, rw);
+      // A first write to a clean translation must walk the page tables to
+      // set the PTE's dirty bit. Dirty entries can be used immediately.
+      if (!(rw & 1) || (tag & 0x400)) {
+        lpf_mask = 0xfff;
+        return BX_CPU_THIS_PTR tr386_data[slot] | access;
+      }
+      break;
+    }
+  }
+
   bx_phy_address entry_addr[2], ppf = (Bit32u) BX_CPU_THIS_PTR cr3 & BX_CR3_PAGING_MASK;
   Bit32u entry[2];
   BxMemtype entry_memtype[2] = { 0 };
@@ -1224,6 +1245,25 @@ bx_phy_address BX_CPU_C::translate_linear_legacy(bx_address laddr, Bit32u &lpf_m
   bool isWrite = (rw & 1); // write or r-m-w
 
   update_access_dirty(entry_addr, entry, entry_memtype, leaf, isWrite);
+
+  if (BX_CPU_THIS_PTR tr386_enabled) {
+    unsigned index = (laddr >> 12) & 7;
+    unsigned way = BX_CPU_THIS_PTR tr386_next[index]++ & 3;
+    // Refresh an existing mapping instead of introducing duplicate tags.
+    for (unsigned n=0; n<4; ++n) {
+      if ((BX_CPU_THIS_PTR tr386_tag[n*8+index] & 0xfffff800) ==
+          ((Bit32u(laddr) & 0xfffff000) | 0x800)) {
+        way = n;
+        break;
+      }
+    }
+    unsigned slot = way * 8 + index;
+    BX_CPU_THIS_PTR tr386_tag[slot] = (Bit32u(laddr) & 0xfffff000) | 0x800 |
+      ((entry[leaf] & 0x40) ? 0x400 : 0x200) |
+      ((combined_access & BX_COMBINED_ACCESS_USER) ? 0x100 : 0x080) |
+      ((combined_access & BX_COMBINED_ACCESS_WRITE) ? 0x040 : 0x020);
+    BX_CPU_THIS_PTR tr386_data[slot] = Bit32u(ppf);
+  }
 
   return (ppf | combined_access);
 }

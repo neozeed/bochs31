@@ -475,6 +475,10 @@ char *disasm_regref(char *disbufptr, const bxInstruction_c *i, unsigned src_num,
     disbufptr = dis_sprintf(disbufptr, "dr%d", srcreg);
     break;
 
+  case BX_TREG:
+    disbufptr = dis_sprintf(disbufptr, "tr%d", srcreg);
+    break;
+
   default:
     if (src_type != BX_NO_REGISTER)
       disbufptr = dis_sprintf(disbufptr, "(unknown source type %d)", src_type);

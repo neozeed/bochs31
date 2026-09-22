@@ -1027,6 +1027,12 @@ public: // for now...
   bx_dr6_t   dr6;
   bx_dr7_t   dr7;
 
+  // 80386 TR6/TR7 and its 4-way, 8-index translation cache.
+  // Separate from the task register 'tr' and Bochs' host-side fast TLBs.
+  bool tr386_enabled;
+  Bit32u tr6, tr7;
+  Bit32u tr386_tag[32], tr386_data[32], tr386_next[8];
+
   Bit32u debug_trap; // holds DR6 value (16bit) to be set
 
   /* Control registers */
@@ -1697,6 +1703,10 @@ public: // for now...
   BX_SMF void MOV_RdCR4(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void MOV_DdRd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void MOV_RdDd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void MOV_RdTd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void MOV_TdRd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void tr386_command(void);
+  BX_SMF void tr386_invalidate(void);
 
   BX_SMF void JO_Jw(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void JNO_Jw(bxInstruction_c *) BX_CPP_AttrRegparmN(1);

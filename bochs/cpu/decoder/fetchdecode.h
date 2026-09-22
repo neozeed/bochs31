@@ -142,8 +142,8 @@ enum {
   BX_TMM_REG = 0xB,
   BX_SEGREG = 0xC,
   BX_CREG = 0xD,
-  BX_DREG = 0xE
-  // encoding 0xF is still free
+  BX_DREG = 0xE,
+  BX_TREG = 0xF
 };
 
 // to be used together with BX_SRC_VECTOR_RM
@@ -321,6 +321,7 @@ const Bit8u OP_Cd = BX_FORM_SRC(BX_CREG, BX_SRC_NNN);
 const Bit8u OP_Cq = BX_FORM_SRC(BX_CREG, BX_SRC_NNN);
 const Bit8u OP_Dd = BX_FORM_SRC(BX_DREG, BX_SRC_NNN);
 const Bit8u OP_Dq = BX_FORM_SRC(BX_DREG, BX_SRC_NNN);
+const Bit8u OP_Td = BX_FORM_SRC(BX_TREG, BX_SRC_NNN);
 
 const Bit8u OP_Sw = BX_FORM_SRC(BX_SEGREG, BX_SRC_NNN);
 

@@ -196,6 +196,7 @@ void BX_CPU_C::initialize(void)
   }
 
   BX_CPU_THIS_PTR cpuid->get_cpu_extensions(BX_CPU_THIS_PTR ia_extensions_bitmask);
+  BX_CPU_THIS_PTR tr386_enabled = !strcmp(BX_CPU_THIS_PTR cpuid->get_name(), "i386");
 
 #if BX_SUPPORT_VMX
   BX_CPU_THIS_PTR vmx_extensions_bitmask = BX_CPU_THIS_PTR cpuid->get_vmx_extensions_bitmask();
@@ -366,6 +367,16 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(cpu, DR3, dr[3]);
   BXRS_HEX_PARAM_FIELD(cpu, DR6, dr6.val);
   BXRS_HEX_PARAM_FIELD(cpu, DR7, dr7.val);
+  BXRS_HEX_PARAM_FIELD(cpu, TR6, tr6);
+  BXRS_HEX_PARAM_FIELD(cpu, TR7, tr7);
+  bx_list_c *test_tlb = new bx_list_c(cpu, "TR386_TLB");
+  for (n=0; n<32; n++) {
+    sprintf(name, "entry%u", n);
+    bx_list_c *e = new bx_list_c(test_tlb, name);
+    BXRS_HEX_PARAM_FIELD(e, tag, tr386_tag[n]);
+    BXRS_HEX_PARAM_FIELD(e, data, tr386_data[n]);
+    if (n < 8) BXRS_HEX_PARAM_FIELD(e, next, tr386_next[n]);
+  }
 #endif
 
   BXRS_HEX_PARAM_FIELD(cpu, CR0, cr0.val);
@@ -1043,6 +1054,12 @@ void BX_CPU_C::reset(unsigned source)
     BX_CPU_THIS_PTR dr6.set32(0xFFFF1FF0); // on 386 bit 12 was set to '1 upon reset
 
   BX_CPU_THIS_PTR dr7.set32(0x00000400);
+
+  // Unspecified power-on values are made deterministic.
+  BX_CPU_THIS_PTR tr6 = BX_CPU_THIS_PTR tr7 = 0;
+  memset(BX_CPU_THIS_PTR tr386_tag, 0, sizeof(BX_CPU_THIS_PTR tr386_tag));
+  memset(BX_CPU_THIS_PTR tr386_data, 0, sizeof(BX_CPU_THIS_PTR tr386_data));
+  memset(BX_CPU_THIS_PTR tr386_next, 0, sizeof(BX_CPU_THIS_PTR tr386_next));
 
   BX_CPU_THIS_PTR in_smm = false;
 

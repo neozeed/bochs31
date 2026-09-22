@@ -35,6 +35,90 @@
 #include "apic.h"
 #endif
 
+// Intel 80386 Programmer's Reference Manual, sections 10.6 and MOV special
+// registers. This implements the 386 interface only, not 486 TR3-TR5.
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdTd(bxInstruction_c *i)
+{
+  unsigned reg = i->src();
+  if (!BX_CPU_THIS_PTR tr386_enabled || reg < 6 || reg > 7)
+    exception(BX_UD_EXCEPTION, 0);
+  if (CPL != 0) exception(BX_GP_EXCEPTION, 0);
+
+  Bit32u value = reg == 6 ? BX_CPU_THIS_PTR tr6 : BX_CPU_THIS_PTR tr7;
+  BX_DEBUG(("TR386 read TR%u = %08x", reg, value));
+  BX_WRITE_32BIT_REGZ(i->dst(), value);
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_TdRd(bxInstruction_c *i)
+{
+  unsigned reg = i->dst();
+  if (!BX_CPU_THIS_PTR tr386_enabled || reg < 6 || reg > 7)
+    exception(BX_UD_EXCEPTION, 0);
+  if (CPL != 0) exception(BX_GP_EXCEPTION, 0);
+
+  Bit32u value = BX_READ_32BIT_REG(i->src());
+  BX_DEBUG(("TR386 write TR%u = %08x", reg, value));
+  // Reserved bits read as zero. Flags are left unchanged (undefined by Intel).
+  if (reg == 7) BX_CPU_THIS_PTR tr7 = value & 0xfffff01c;
+  else {
+    BX_CPU_THIS_PTR tr6 = value & 0xffffffe1;
+    tr386_command();
+  }
+  BX_NEXT_TRACE(i);
+}
+
+void BX_CPU_C::tr386_invalidate(void)
+{
+  for (unsigned n=0; n<32; ++n)
+    BX_CPU_THIS_PTR tr386_tag[n] &= ~0x800; // clear V, retain tag/data
+}
+
+void BX_CPU_C::tr386_command(void)
+{
+  Bit32u cmd = BX_CPU_THIS_PTR tr6;
+  unsigned index = (cmd >> 12) & 7;
+  bool lookup = (cmd & 1) != 0;
+
+  // Intel specifies only complementary D/D#, U/U#, W/W# pairs. Choose a
+  // deterministic miss/no-write for its undefined encodings (00 and 11).
+  for (unsigned shift=5; shift<=9; shift+=2) {
+    unsigned pair = (cmd >> shift) & 3;
+    if (pair == 0 || pair == 3) {
+      if (lookup) BX_CPU_THIS_PTR tr7 &= ~0x10;
+      return;
+    }
+  }
+
+  if (!lookup) {
+    // HT must be 1 for a software TLB write. HT=0 is unspecified.
+    if (!(BX_CPU_THIS_PTR tr7 & 0x10)) return;
+    unsigned way = (BX_CPU_THIS_PTR tr7 >> 2) & 3;
+    unsigned slot = way * 8 + index;
+    BX_CPU_THIS_PTR tr386_tag[slot] = cmd & ~1;
+    BX_CPU_THIS_PTR tr386_data[slot] = BX_CPU_THIS_PTR tr7 & 0xfffff000;
+    // Drop host translation shortcuts so an injected translation is visible.
+    // TLB_flush deliberately does not erase the architectural test cache.
+    TLB_flush();
+    return;
+  }
+
+  unsigned matches = 0, hit = 0;
+  for (unsigned way=0; way<4; ++way) {
+    unsigned slot = way * 8 + index;
+    if (BX_CPU_THIS_PTR tr386_tag[slot] == (cmd & ~1)) {
+      ++matches;
+      hit = slot;
+    }
+  }
+  // Duplicate matches are undefined on silicon; report a deterministic miss.
+  BX_CPU_THIS_PTR tr7 &= ~0x10;
+  if (matches == 1) {
+    BX_CPU_THIS_PTR tr7 = BX_CPU_THIS_PTR tr386_data[hit] | 0x10 | ((hit / 8) << 2);
+    BX_CPU_THIS_PTR tr6 = BX_CPU_THIS_PTR tr386_tag[hit] | 1;
+  }
+}
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
@@ -1157,6 +1241,7 @@ bool BX_CPU_C::SetCR0(bxInstruction_c *i, bx_address val)
   // Additionally, the TLB strategy is based on the current value of
   // WP, so if that changes we must also flush the TLB.
   if ((oldCR0 & 0x80010001) != (val_32 & 0x80010001)) {
+    if (BX_CPU_THIS_PTR tr386_enabled) tr386_invalidate();
     TLB_flush(); // Flush Global entries also
 #if BX_SUPPORT_PKEYS
     set_PKeys(BX_CPU_THIS_PTR pkru, BX_CPU_THIS_PTR pkrs); // recalculate protection keys due to CR0.WP change
@@ -1457,6 +1542,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR3(bx_address val)
 #endif
 
   BX_CPU_THIS_PTR cr3 = val;
+  if (BX_CPU_THIS_PTR tr386_enabled) tr386_invalidate();
 
   // flush TLB even if value does not change
 #if BX_CPU_LEVEL >= 6

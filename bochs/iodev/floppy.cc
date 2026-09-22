@@ -1410,6 +1410,22 @@ void bx_floppy_ctrl_c::floppy_command(void)
         return; // Hang controller
       }
 
+      // Diagnostic: reject non-500 Kbit/s access to standard 1.44 MB media.
+      if (BX_FD_THIS s.command[0] == 0x46 &&
+          BX_FD_THIS s.media[drive].tracks == 80 &&
+          BX_FD_THIS s.media[drive].sectors_per_track == 18 &&
+          (BX_FD_THIS s.DSR & 3) != 0) {
+        BX_INFO(("OS2TEST: reject 1.44MB access at rate selector %u", BX_FD_THIS s.DSR & 3));
+        BX_FD_THIS s.cylinder[drive] = cylinder;
+        BX_FD_THIS s.head[drive] = head;
+        BX_FD_THIS s.sector[drive] = sector;
+        BX_FD_THIS s.status_reg0 = 0x40 | (head << 2) | drive;
+        BX_FD_THIS s.status_reg1 = 0x04;
+        BX_FD_THIS s.status_reg2 = 0;
+        enter_result_phase();
+        return;
+      }
+
       if (sector_size != 0x02) { // 512 bytes
         BX_PANIC(("read/write/verify/scan command: sector size %d not supported", 128<<sector_size));
       }
