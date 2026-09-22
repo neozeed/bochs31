@@ -5,6 +5,8 @@ This fork adds the TR register that debug OS/2 kernels rely on. Although these r
 
 Additionally the 3 1/2" disk speed is set to 500kb/sec so not to confuse OS/2 (source of so many COUNTRY.SYS issues.
 
+## Original Readme
+
 Bochs is a portable IA-32 (x86) PC emulator written in C++
 that runs on most popular platforms. It includes emulation of the Intel x86 
 CPU, common I/O devices, and a custom BIOS.
